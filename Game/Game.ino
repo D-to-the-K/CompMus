@@ -39,9 +39,6 @@ Note songNotes[] = {
   Note(0, Time(0, 3, 0), 0, 500, 250)
 };
 
-unsigned int nextNoteToJudge = 0;
-unsigned int gameStartMillis = 0;
-
 // game/song params
 const int GLOBAL_DELAY_MS = 0; // used to adjust both song and notes together
 const int GLOBAL_OFFSET_MS = 0; // used to offset notes in relation to song
@@ -69,11 +66,11 @@ const byte RGB_RED[] = {255, 0, 0};
 const byte RGB_GREEN[] = {0, 255, 0};
 const byte RGB_BLUE[] = {0, 0, 255};
 
-// input state
+// game state
+unsigned int nextNoteToJudge = 0;
+unsigned int gameStartMillis = 0;
 bool lastSeenKeys[NUM_KEYS] = {0};
-
-// playfield state
-bool playField[NUM_ROWS][5] = {0};
+bool playField[NUM_ROWS][NUM_KEYS] = {0};
 
 bool isKeyPressed(int key) {
   switch (key) {
@@ -146,7 +143,8 @@ void setup() {
   // loop until we get any input
   while (true) {
     if (digitalRead(KEY_0_PIN) == LOW
-        || digitalRead(KEY_1_PIN) == LOW) {
+        || digitalRead(KEY_1_PIN) == LOW
+        /* TODO: add more */) {
       break;
     }
   }
