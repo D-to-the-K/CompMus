@@ -17,24 +17,26 @@ public:
 
 class Note {
 public:
-  Time startTime = Time(0, 0, 0);
   byte track;
+  Time startTime = Time(0, 0, 0);
+  byte channel;
   unsigned int frequency;
   unsigned long durationMs;
 
-  Note(byte track, Time startTime, unsigned int frequency, unsigned long durationMs) {
+  Note(byte track, Time startTime, byte channel, unsigned int frequency, unsigned long durationMs) {
     this->track = track;
     this->startTime = startTime;
+    this->channel = channel;
     this->frequency = frequency;
     this->durationMs = durationMs;
   }
 };
 
 Note songNotes[] = {
-  Note(0, Time(0, 0, 0), 1500, 500),
-  Note(0, Time(0, 1, 0), 500, 250),
-  Note(0, Time(0, 2, 0), 1500, 500),
-  Note(0, Time(0, 3, 0), 500, 250)
+  Note(0, Time(0, 0, 0), 0, 1500, 500),
+  Note(0, Time(0, 1, 0), 0, 500, 250),
+  Note(0, Time(0, 2, 0), 0, 1500, 500),
+  Note(0, Time(0, 3, 0), 0, 500, 250)
 };
 
 unsigned int nextNoteToJudge = 0;
@@ -43,13 +45,13 @@ unsigned int gameStartMillis = 0;
 // game/song params
 const int GLOBAL_DELAY_MS = 0; // used to adjust both song and notes together
 const int GLOBAL_OFFSET_MS = 0; // used to offset notes in relation to song
-const int TIMING_WINDOW_MS = 60; // how many ms can the player hit the note before or after the note's time
+const int TIMING_WINDOW_MS = 100; // how many ms can the player hit the note before or after the note's time
 const int BEATS_PER_MINUTE = 120; // song's BPM
 const int NUM_KEYS = 2; // number of player input keys
 const int NUM_ROWS = 10; // number of rows in the playfield
 const int NOTE_SPEED = 2; // number of rows of separation between consecutive notes
-const float BEAT_DURATION = 60.0 / BEATS_PER_MINUTE;
-const int PLAYFIELD_DRAW_DISTANCE_MS = (float) NUM_ROWS / NOTE_SPEED * BEAT_DURATION;
+const int BEAT_DURATION_MS = 60.0 / BEATS_PER_MINUTE * 1000;
+const int PLAYFIELD_DRAW_DISTANCE_MS = (float) NUM_ROWS / NOTE_SPEED * BEAT_DURATION_MS;
 const unsigned int LAST_NOTE = sizeof(songNotes) / sizeof(songNotes[0]);
 
 // pins
@@ -102,18 +104,41 @@ void judgeMiss() {
 void judgeHit(const Note& note) {
   // TODO: blink and then reset?
   setJudgeColor(RGB_GREEN);
-  tone(note.frequency, note.durationMs);
+  tone(BUZZER_PIN, note.frequency, note.durationMs);
 }
 
 void setup() {
-  Serial.begin(9600);
-
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(JUDGE_RGB_LED_R_PIN, OUTPUT);
   pinMode(JUDGE_RGB_LED_G_PIN, OUTPUT);
   pinMode(JUDGE_RGB_LED_B_PIN, OUTPUT);
   pinMode(KEY_0_PIN, INPUT);
   pinMode(KEY_1_PIN, INPUT);
+
+  // TODO: set this baud rate in the Serial Monitor
+  Serial.begin(115200);
+
+  // print game/song params
+  Serial.print("Setting global delay to (in ms): ");
+  Serial.println(GLOBAL_DELAY_MS);
+  Serial.print("Setting global offset to (in ms): ");
+  Serial.println(GLOBAL_OFFSET_MS);
+  Serial.print("Setting timing window to (in ms): ");
+  Serial.println(TIMING_WINDOW_MS);
+  Serial.print("Setting song's BPM to: ");
+  Serial.println(BEATS_PER_MINUTE);
+  Serial.print("Setting game's key number to: ");
+  Serial.println(NUM_KEYS);
+  Serial.print("Setting game's playfield rows number to: ");
+  Serial.println(NUM_ROWS);
+  Serial.print("Setting game's note speed to: ");
+  Serial.println(NOTE_SPEED);
+  Serial.print("Setting song's beat duration to (in ms): ");
+  Serial.println(BEAT_DURATION_MS);
+  Serial.print("Setting game's playfield draw distance to (in ms): ");
+  Serial.println(PLAYFIELD_DRAW_DISTANCE_MS);
+  Serial.print("Setting song's number of notes to: ");
+  Serial.println(LAST_NOTE);
 
   // set judge LED to white to say it's waiting for the first input
   setJudgeColor(RGB_WHITE);
@@ -147,19 +172,49 @@ void loop() {
     return;
   }
 
+  Serial.println("Song is playing");
+
   auto nowMs = millis() - gameStartMillis;
+
+  Serial.print("Current song time (in ms): ");
+  Serial.println(nowMs);
+
+  // DEBUG: dump pressed keys
+  char playerKeys[NUM_KEYS + 1];
+  for (int i = 0; i < NUM_KEYS; ++i) {
+    if (isKeyPressed(i)) {
+      playerKeys[i] = '1';
+    }
+    else {
+      playerKeys[i] = '0';
+    }
+  }
+  playerKeys[NUM_KEYS] = '\0';
+  Serial.print("Player keys: ");
+  Serial.println(playerKeys);
 
   // judge new notes
   while (true) {
+    Serial.print("Judging note ");
+    Serial.println(nextNoteToJudge);
+
     // get the next note not yet judged
     auto& note = songNotes[nextNoteToJudge];
 
+    Serial.print("Note's start time is ");
+    Serial.println(note.startTime.ToMs());
+
     // if it's ahead of the timing window...
     if (note.startTime.ToMs() > nowMs + TIMING_WINDOW_MS) {
-      // any keypress here is a miss
+      Serial.println("Note is ahead of the timing window");
+
+      // any keypress here is a miss, but it doesn't count as a judged note
       // note: a keypress is a transition from key up to key down
       for (int i = 0; i < NUM_KEYS; ++i) {
         if (!lastSeenKeys[note.track] && isKeyPressed(i)) {
+          Serial.print("Found a MISS on key ");
+          Serial.println(i);
+
           judgeMiss();
           break;
         }
@@ -171,37 +226,63 @@ void loop() {
 
     // if it's inside the timing window, check for keypress
     // note: a keypress is a transition from key up to key down
-    if (!lastSeenKeys[note.track] && isKeyPressed(note.track)) {
-      // store key now to prevent reprocessing it for another note
-      lastSeenKeys[note.track] = true;
-      judgeHit(note);
+    // sign cast is needed because one side may be negative
+    if ((int) note.startTime.ToMs() >= (int) nowMs - TIMING_WINDOW_MS) {
+      Serial.println("Note is inside of the timing window");
+
+      Serial.print("Checking note track: ");
+      Serial.println(note.track);
+      if (!lastSeenKeys[note.track] && isKeyPressed(note.track)) {
+        Serial.print("Found a HIT on key ");
+        Serial.println(note.track);
+
+        // store key now to prevent reprocessing it for another note
+        lastSeenKeys[note.track] = true;
+        judgeHit(note);
+        nextNoteToJudge += 1;
+      }
+
+      // don't judge further notes
+      break;
     }
 
     // if it's behind the timing window, it's a miss
-    if (note.startTime.ToMs() < nowMs - TIMING_WINDOW_MS) {
-      judgeMiss();
-    }
+    // sign cast is needed because one side may be negative
+    if ((int) note.startTime.ToMs() < (int) nowMs - TIMING_WINDOW_MS) {
+      Serial.println("Note is behind of the timing window -- MISS");
 
-    nextNoteToJudge += 1;
+      judgeMiss();
+      nextNoteToJudge += 1;
+    }
   }
 
   // draw remaining notes in the playfield
   int nextNoteToDraw = nextNoteToJudge;
   while (true) {
+    Serial.print("Drawing note ");
+    Serial.println(nextNoteToDraw);
+
     // get the next note not yet drawn
     auto& note = songNotes[nextNoteToDraw];
 
     // if it's ahead of the playfield, stop
     if (note.startTime.ToMs() > nowMs + PLAYFIELD_DRAW_DISTANCE_MS) {
+      Serial.println("Note is not yet visible in the playfield");
+
+      // don't draw further notes
       break;
     }
 
-    // calculate this note's position
+    // calculate this note's vertical position
     // TODO
     int row = 1;
+    Serial.print("Note's vertical position is ");
+    Serial.println(row);
 
     // turn on the corresponding LED
     playField[row][note.track] = true;
+
+    nextNoteToDraw += 1;
   }
 
   // store current keys
@@ -209,25 +290,30 @@ void loop() {
     lastSeenKeys[i] = isKeyPressed(i);
   }
 
-  // DEBUG: print resulting playfield
-  // TODO: use a terminal emulator instead?
-  return;
-  for (int col = 0; col < NUM_KEYS; ++col) {
-    Serial.print("-");
-  }
-  Serial.print("\r\n");
-  for (int row = NUM_ROWS - 1; row > 0; --row) {
-    // print row
-    for (int col = 0; col < NUM_KEYS; ++col) {
-      Serial.print((int) playField[row][col]);
+  // DEBUG: print timestamp
+  char timestamp[10];
+  int nowMinutes = nowMs / (1000 * 60);
+  nowMs = nowMs % (1000 * 60);
+  int nowSeconds = nowMs / 1000;
+  nowMs = nowMs % 1000;
+  snprintf(timestamp, 9, "%02d:%02d.%03d", nowMinutes, nowSeconds, nowMs);
+  Serial.println(timestamp);
 
-      if (col == NUM_KEYS - 1) {
-        Serial.print("\r\n");
+  // DEBUG: print playfield
+  char playFieldString[NUM_ROWS * (NUM_KEYS + 2)]; // reserve space for \r\n
+  for (int row = 0; row < NUM_ROWS; ++row) {
+    for (int col = 0; col < NUM_KEYS; ++col) {
+      if (playField[NUM_ROWS - row - 1][col]) {
+        playFieldString[row * (NUM_KEYS + 2) + col] = '1';
       }
+      else {
+        playFieldString[row * (NUM_KEYS + 2) + col] = '0';
+      }
+
+      playFieldString[row * (NUM_KEYS + 2) + NUM_KEYS] = '\r';
+      playFieldString[row * (NUM_KEYS + 2) + NUM_KEYS + 1] = '\n';
     }
   }
-  for (int col = 0; col < NUM_KEYS; ++col) {
-    Serial.print("-");
-  }
-  Serial.print("\r\n\r\n\r\n");
+  playFieldString[NUM_ROWS * (NUM_KEYS + 2) - 2] = '\0';
+  Serial.println(playFieldString);
 }
