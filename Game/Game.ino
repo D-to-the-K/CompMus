@@ -1,3 +1,5 @@
+#include "LedControl.h"
+
 class Time {
 public:
   unsigned int minutes;
@@ -34,9 +36,14 @@ public:
 
 Note songNotes[] = {
   Note(0, Time(0, 0, 0), 0, 1500, 500),
-  Note(0, Time(0, 0, 500), 0, 500, 250),
-  Note(0, Time(0, 1, 0), 0, 1500, 500),
-  Note(0, Time(0, 1, 500), 0, 500, 250)
+  Note(0, Time(0, 1, 0), 0, 500, 250),
+  Note(0, Time(0, 2, 0), 0, 1500, 500),
+  Note(0, Time(0, 3, 0), 0, 500, 250),
+
+  Note(1, Time(0, 4, 0), 0, 1500, 500),
+  Note(1, Time(0, 5, 0), 0, 500, 250),
+  Note(1, Time(0, 6, 0), 0, 1500, 500),
+  Note(1, Time(0, 7, 0), 0, 500, 250)
 };
 
 // game/song params
@@ -44,19 +51,22 @@ const int GLOBAL_DELAY_MS = 3000; // used to adjust both song and notes together
 const int TIMING_WINDOW_MS = 100; // how many ms can the player hit the note before or after the note's time
 const int BEATS_PER_MINUTE = 120; // song's BPM
 const int NUM_KEYS = 2; // number of player input keys
-const int NUM_ROWS = 10; // number of rows in the playfield
+const int NUM_ROWS = 3; // number of rows in the playfield
 const float NOTE_SPEED = 2; // number of rows of separation between consecutive notes
 const int BEAT_DURATION_MS = 60.0 / BEATS_PER_MINUTE * 1000;
 const int PLAYFIELD_DRAW_DISTANCE_MS = NUM_ROWS / NOTE_SPEED * BEAT_DURATION_MS;
 const unsigned int LAST_NOTE = sizeof(songNotes) / sizeof(songNotes[0]);
+const int POINTS_ON_HIT = 15;
 
 // pins
 const int BUZZER_PIN = 3; // PWM pin for the buzzer
 const int JUDGE_RGB_LED_R_PIN = 11; // red pin for an RGB LED (used to tell the player if he hit or missed the note)
 const int JUDGE_RGB_LED_G_PIN = 10; // green pin for an RGB LED
 const int JUDGE_RGB_LED_B_PIN = 9; // blue pin for an RGB LED
-const int KEY_0_PIN = A0; // pin for the first game button (leftmost)
-const int KEY_1_PIN = A1; // pin for the second game button
+const int JUDGE_LED_RED = 6;
+const int JUDGE_LED_GREEN = 5;
+const int KEY_0_PIN = 4; // pin for the first game button (leftmost)
+const int KEY_1_PIN = 2; // pin for the second game button
 
 // colors
 const byte RGB_BLACK[] = {0, 0, 0};
@@ -65,11 +75,16 @@ const byte RGB_RED[] = {255, 0, 0};
 const byte RGB_GREEN[] = {0, 255, 0};
 const byte RGB_BLUE[] = {0, 0, 255};
 
+
+
 // game state
 unsigned int nextNoteToJudge = 0;
 unsigned int gameStartMillis = 0;
 bool lastSeenKeys[NUM_KEYS] = {0};
 bool playField[NUM_ROWS][NUM_KEYS] = {0};
+int playFieldPins [NUM_ROWS][NUM_KEYS] = {{A0, A3},{A1,A4},{A2,A5}};
+int points = 0;
+LedControl lc=LedControl(12,11,10,1);
 
 bool isKeyPressed(int key) {
   switch (key) {
@@ -93,6 +108,7 @@ void setJudgeColor(const byte color[]) {
 
 void judgeMiss() {
   // TODO: blink and then reset?
+  Serial.print("MISS\n");
   setJudgeColor(RGB_RED);
   noTone(BUZZER_PIN);
 }
@@ -101,19 +117,29 @@ void judgeHit(const Note& note) {
   // TODO: blink and then reset?
   setJudgeColor(RGB_GREEN);
   tone(BUZZER_PIN, note.frequency, note.durationMs);
+  points += POINTS_ON_HIT;
 }
 
 void setup() {
+
+  
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(JUDGE_RGB_LED_R_PIN, OUTPUT);
   pinMode(JUDGE_RGB_LED_G_PIN, OUTPUT);
   pinMode(JUDGE_RGB_LED_B_PIN, OUTPUT);
-  pinMode(KEY_0_PIN, INPUT);
-  pinMode(KEY_1_PIN, INPUT);
-
+  pinMode(KEY_0_PIN, INPUT_PULLUP);
+  pinMode(KEY_1_PIN, INPUT_PULLUP);
+  pinMode(A0, OUTPUT);
+  pinMode(A1, OUTPUT);
+  pinMode(A2, OUTPUT);
+  pinMode(A3, OUTPUT);
+  pinMode(A4, OUTPUT);
+  pinMode(A5, OUTPUT);
   // TODO: set this baud rate in the Serial Monitor
   Serial.begin(115200);
 
+  digitalWrite(JUDGE_LED_RED, HIGH);
+  digitalWrite(JUDGE_LED_GREEN, HIGH);
   // print game/song params
   Serial.print("Setting global delay to (in ms): ");
   Serial.println(GLOBAL_DELAY_MS);
@@ -135,8 +161,19 @@ void setup() {
   Serial.println(LAST_NOTE);
 
   // set judge LED to white to say it's waiting for the first input
-  setJudgeColor(RGB_WHITE);
+  //setJudgeColor(RGB_WHITE);
+  digitalWrite(A0, HIGH);
+  digitalWrite(A1, HIGH);
+  digitalWrite(A2, HIGH);
+  digitalWrite(A3, HIGH);
+  digitalWrite(A4, HIGH);
+  digitalWrite(A5, HIGH);
 
+  // Initialize display
+  lc.shutdown(0,false);
+  lc.setIntensity(0,8);
+  lc.clearDisplay(0);
+  
   // loop until we get any input
   // store the first key press to not judge a note because of it
   while (true) {
@@ -201,6 +238,8 @@ void loop() {
   Serial.print("Player keys: ");
   Serial.println(playerKeys);
 
+
+  
   // judge new notes
   while (true) {
     Serial.print("Judging note ");
@@ -276,6 +315,8 @@ void loop() {
     Serial.print("Drawing note ");
     Serial.println(nextNoteToDraw);
 
+  
+    
     // get the next note not yet drawn
     auto& note = songNotes[nextNoteToDraw];
     auto adjustedNoteStartMs = note.startTime.toMs() + GLOBAL_DELAY_MS;
@@ -299,8 +340,11 @@ void loop() {
     // turn on the corresponding LED
     playField[row][note.track] = true;
 
+    
     nextNoteToDraw += 1;
 
+
+    
     // stop if the song is over
     if (nextNoteToDraw == LAST_NOTE) {
       break;
@@ -319,14 +363,29 @@ void loop() {
   snprintf(timestamp, 9, "%02d:%02d.%03d", nowMinutes, nowSeconds, nowMs);
   Serial.println(timestamp);
 
+  // print display
+  int display;
+  int points_cpy = points;
+  Serial.print(points);
+  for (int idx=0; idx<8; idx++)
+  {
+    display = points_cpy%10;
+    points_cpy /= 10;
+    lc.setDigit(0,idx,display, false);
+  }
+  
+
+  
   // DEBUG: print playfield
   char playFieldString[NUM_ROWS * (NUM_KEYS + 2)]; // reserve space for \r\n
   for (int row = 0; row < NUM_ROWS; ++row) {
     for (int col = 0; col < NUM_KEYS; ++col) {
       if (playField[NUM_ROWS - row - 1][col]) {
         playFieldString[row * (NUM_KEYS + 2) + col] = '1';
+        digitalWrite(playFieldPins[row][col], HIGH);
       }
       else {
+        digitalWrite(playFieldPins[row][col], LOW);
         playFieldString[row * (NUM_KEYS + 2) + col] = '0';
       }
 
