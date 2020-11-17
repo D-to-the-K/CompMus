@@ -1,54 +1,8 @@
 #include "LedControl.h"
-
-class Time {
-public:
-  unsigned int minutes;
-  unsigned int seconds;
-  unsigned int ms;
-
-  Time(unsigned int minutes, unsigned int seconds, unsigned int ms) {
-    this->minutes = minutes;
-    this->seconds = seconds;
-    this->ms = ms;
-  }
-
-  unsigned int toMs() {
-    return minutes * 60 * 1000 + seconds * 1000 + ms;
-  }
-};
-
-class Note {
-public:
-  byte track;
-  Time startTime = Time(0, 0, 0);
-  byte channel;
-  unsigned int frequency;
-  unsigned long durationMs;
-
-  Note(byte track, Time startTime, byte channel, unsigned int frequency, unsigned long durationMs) {
-    this->track = track;
-    this->startTime = startTime;
-    this->channel = channel;
-    this->frequency = frequency;
-    this->durationMs = durationMs;
-  }
-};
-
-Note songNotes[] = {
-  Note(0, Time(0, 0, 0), 0, 1500, 500),
-  Note(0, Time(0, 1, 0), 0, 500, 250),
-  Note(0, Time(0, 2, 0), 0, 1500, 500),
-  Note(0, Time(0, 3, 0), 0, 500, 250),
-
-  Note(1, Time(0, 4, 0), 0, 1500, 500),
-  Note(1, Time(0, 5, 0), 0, 500, 250),
-  Note(1, Time(0, 6, 0), 0, 1500, 500),
-  Note(1, Time(0, 7, 0), 0, 500, 250)
-};
-
+#include "notes.h"
 // game/song params
 const int GLOBAL_DELAY_MS = 3000; // used to adjust both song and notes together
-const int TIMING_WINDOW_MS = 100; // how many ms can the player hit the note before or after the note's time
+const int TIMING_WINDOW_MS = 200; // how many ms can the player hit the note before or after the note's time
 const int BEATS_PER_MINUTE = 120; // song's BPM
 const int NUM_KEYS = 2; // number of player input keys
 const int NUM_ROWS = 3; // number of rows in the playfield
